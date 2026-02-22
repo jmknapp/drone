@@ -62,9 +62,28 @@ OUT="${BASE}_HUD.mp4"
 echo "Building HUD overlay from ${SRT}..."
 python3 build_hud_overlay.py "${IMPERIAL[@]}" "$BASE"
 
+# Get total frame count for progress
+duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$MP4" 2>/dev/null || echo 0)
+fps=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "$MP4" 2>/dev/null || echo "30/1")
+fps_val=$(awk "BEGIN {print $fps}")
+total_frames=$(awk "BEGIN {printf \"%.0f\", $duration * $fps_val}")
+
+show_progress() {
+  while IFS= read -r line; do
+    case "$line" in
+      frame=*) frame="${line#frame=}" ;;
+      progress=end) echo ""; return ;;
+    esac
+    if [[ -n "${frame:-}" && -n "$total_frames" && "$total_frames" -gt 0 ]]; then
+      pct=$((frame * 100 / total_frames))
+      printf "\rFrame %s of %s (%d%%)" "$frame" "$total_frames" "$pct"
+    fi
+  done
+}
+
 if [[ "$NO_AUDIO" == "true" || -z "$M4A" ]]; then
   echo "Rendering video with HUD (using MP4 audio if present)..."
-  ffmpeg -hide_banner -loglevel error -y \
+  ffmpeg -hide_banner -loglevel error -y -progress pipe:1 \
     -i "$MP4" \
     -vf "ass=$ASS" \
     -map 0:v:0 -map 0:a? \
@@ -72,10 +91,10 @@ if [[ "$NO_AUDIO" == "true" || -z "$M4A" ]]; then
     -profile:v main -level 4.0 \
     -c:a copy \
     -movflags +faststart \
-    "$OUT"
+    "$OUT" 2>/dev/null | show_progress
 else
   echo "Rendering video with HUD and audio (Main profile for wide compatibility)..."
-  ffmpeg -hide_banner -loglevel error -y \
+  ffmpeg -hide_banner -loglevel error -y -progress pipe:1 \
     -i "$MP4" \
     -i "$M4A" \
     -map 0:0 -map 1:0 \
@@ -84,7 +103,7 @@ else
     -profile:v main -level 4.0 \
     -c:a aac -b:a 128k -ar 44100 \
     -movflags +faststart \
-    "$OUT"
+    "$OUT" 2>/dev/null | show_progress
 fi
 
 echo "Done: $OUT"
