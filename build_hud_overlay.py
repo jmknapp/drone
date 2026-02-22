@@ -218,17 +218,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             spd_v_s = f"{spd_v:+6.1f} m/s" if spd_v is not None else "  —    m/s"
 
         # Orientation from quaternion (roll, pitch, yaw degrees); heading 0-360 (fixed width)
-        # At pitch ≈ -90° (straight down), roll and hdg are ambiguous — show ---
+        # Heading comes from magnetometer, so show it always. Roll ambiguous when gimbal down.
         orient_s = "—"
         if rec["quat_w"] is not None:
             roll, pitch, yaw = quat_to_euler_deg(
                 rec["quat_w"], rec["quat_x"], rec["quat_y"], rec["quat_z"]
             )
+            hdg = (int(round(yaw)) + 360) % 360
             gimbal_down = abs(pitch + 90) < 5
             if gimbal_down:
-                orient_s = f"Roll  ---°  Pitch {pitch:4.0f}°  Hdg ---°"
+                orient_s = f"Roll  ---°  Pitch {pitch:4.0f}°  Hdg {hdg:3d}°"
             else:
-                hdg = (int(round(yaw)) + 360) % 360
                 orient_s = f"Roll {roll:4.0f}°  Pitch {pitch:4.0f}°  Hdg {hdg:3d}°"
 
         # Time with seconds to one decimal place (tenths)
