@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 
-from velocity_filters import apply_velocity_filter
+from velocity_filters import apply_velocity_filter, apply_vertical_velocity_filter
 
 M_TO_FT = 3.28084
 MPS_TO_MPH = 2.23694
@@ -220,9 +220,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except (ValueError, TypeError):
                 pass
 
-    # Same filter as export_velocity_csv: median + trimmed mean
+    # Horizontal: full filter (median + trimmed mean). Vertical: median only to preserve small climb/descent.
     spd_h_filtered = apply_velocity_filter(raw_spd_h)
-    spd_v_filtered = apply_velocity_filter(raw_spd_v)
+    spd_v_filtered = apply_vertical_velocity_filter(raw_spd_v)
 
     ref_lat = ref_lon = None
     if records and records[0].get("lat") and records[0].get("lon"):

@@ -63,3 +63,11 @@ def apply_velocity_filter(values: list[float | None]) -> list[float | None]:
     k = TRIM if TRIM > 0 else max(1, TRIMMED_WINDOW // 5)
     result = trimmed_mean_filter(result, TRIMMED_WINDOW, k)
     return result
+
+
+def apply_vertical_velocity_filter(values: list[float | None]) -> list[float | None]:
+    """
+    Lighter filter for vertical (climb) velocity. Median only; no trimmed mean.
+    Preserves small legitimate values (e.g. -0.4 ft/s descent near ground).
+    """
+    return median_filter(values, MEDIAN_WINDOW)
