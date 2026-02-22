@@ -67,7 +67,26 @@ def apply_velocity_filter(values: list[float | None]) -> list[float | None]:
 
 def apply_vertical_velocity_filter(values: list[float | None]) -> list[float | None]:
     """
-    Lighter filter for vertical (climb) velocity. Median only; no trimmed mean.
-    Preserves small legitimate values (e.g. -0.4 ft/s descent near ground).
+    Filter for vertical (climb) velocity. No median (it zeroes when zeros dominate).
+    Only output 0.0 if many consecutive zeros (genuine hover); else carry forward last non-zero.
     """
-    return median_filter(values, MEDIAN_WINDOW)
+    ZERO_THRESH = 0.15  # m/s; treat as zero
+    MIN_ZEROS_FOR_REAL = 30  # ~1 s at 30 fps; end-of-descent can have many zeros in a row
+    out: list[float | None] = []
+    last_nonzero: float | None = None
+    consecutive_zeros = 0
+    for v in values:
+        if v is None:
+            out.append(None)
+            continue
+        if abs(v) <= ZERO_THRESH:
+            consecutive_zeros += 1
+            if consecutive_zeros >= MIN_ZEROS_FOR_REAL:
+                out.append(0.0)
+            else:
+                out.append(last_nonzero if last_nonzero is not None else 0.0)
+        else:
+            consecutive_zeros = 0
+            last_nonzero = v
+            out.append(v)
+    return out

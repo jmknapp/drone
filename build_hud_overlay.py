@@ -225,10 +225,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     spd_v_filtered = apply_vertical_velocity_filter(raw_spd_v)
 
     ref_lat = ref_lon = None
-    if records and records[0].get("lat") and records[0].get("lon"):
+    for rec in records:
+        if not rec.get("lat") or not rec.get("lon"):
+            continue
         try:
-            ref_lat = float(records[0]["lat"])
-            ref_lon = float(records[0]["lon"])
+            lat_f = float(rec["lat"])
+            lon_f = float(rec["lon"])
+            if lat_f != 0.0 and lon_f != 0.0:
+                ref_lat, ref_lon = lat_f, lon_f
+                break
         except (ValueError, TypeError):
             pass
 
