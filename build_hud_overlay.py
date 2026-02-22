@@ -9,42 +9,26 @@ import re
 import sys
 from pathlib import Path
 
-try:
-    import utm
-    _HAS_UTM = True
-except ImportError:
-    _HAS_UTM = False
-
 M_TO_FT = 3.28084
 MPS_TO_MPH = 2.23694
 
-
-def latlon_to_utm_str(lat: float, lon: float) -> str | None:
-    """Return UTM zone, easting, northing as string, or None if unavailable."""
-    if not _HAS_UTM:
-        return None
-    try:
-        easting, northing, zone_num, zone_letter = utm.from_latlon(lat, lon)
-        return f"UTM {zone_num}{zone_letter} {easting:>7.0f} {northing:>7.0f}"
-    except Exception:
-        return None
+# Meters per degree at equator; longitude scale varies with latitude
+M_PER_DEG_LAT = 111320.0
 
 
 def latlon_to_relative_str(
     lat: float, lon: float, ref_lat: float, ref_lon: float, imperial: bool
-) -> str | None:
-    """Return relative N/E offset as string, or None if unavailable."""
-    if not _HAS_UTM:
-        return None
-    try:
-        e, n, _, _ = utm.from_latlon(lat, lon)
-        re, rn, _, _ = utm.from_latlon(ref_lat, ref_lon)
-        dn = (n - rn) * (M_TO_FT if imperial else 1.0)
-        de = (e - re) * (M_TO_FT if imperial else 1.0)
-        unit = "feet" if imperial else "m"
-        return f"Relative {unit}: {dn:+6.1f} N  {de:+6.1f} E"
-    except Exception:
-        return None
+) -> str:
+    """Return relative N/E offset from reference point using lat/lon approximation."""
+    dn = (lat - ref_lat) * M_PER_DEG_LAT
+    de = (lon - ref_lon) * M_PER_DEG_LAT * math.cos(math.radians(ref_lat))
+    if imperial:
+        dn *= M_TO_FT
+        de *= M_TO_FT
+        unit = "feet"
+    else:
+        unit = "m"
+    return f"Relative {unit}: {dn:+6.1f} N  {de:+6.1f} E"
 
 
 def quat_to_euler_deg(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
@@ -261,7 +245,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         lat_s = f"{float(rec['lat']):10.6f}" if rec["lat"] else "—"
         lon_s = f"{float(rec['lon']):11.6f}" if rec["lon"] else "—"
-        utm_s = latlon_to_utm_str(float(rec["lat"]), float(rec["lon"])) if rec["lat"] and rec["lon"] else None
         if imperial:
             alt_s = f"{float(rec['abs_alt']) * M_TO_FT:6.0f}ft" if rec["abs_alt"] else "   —  ft"
             agl_s = f"{float(rec['rel_alt']) * M_TO_FT:5.0f}ft" if rec.get("rel_alt") else "  —  ft"
@@ -273,14 +256,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         fnum_s = f"{rec['fnum']:>4}"
         iso_s = f"{rec['iso']:>4}"
         pos_line = f"{lat_s}, {lon_s}"
-        if utm_s:
-            pos_line += f"\\N{utm_s}"
         if ref_lat is not None and ref_lon is not None and rec["lat"] and rec["lon"]:
-            rel_s = latlon_to_relative_str(
-                float(rec["lat"]), float(rec["lon"]), ref_lat, ref_lon, imperial
-            )
-            if rel_s:
-                pos_line += f"\\N{rel_s}"
+            pos_line += f"\\N{latlon_to_relative_str(float(rec['lat']), float(rec['lon']), ref_lat, ref_lon, imperial)}"
         line1 = f"{ts}\\N{pos_line}\\NALT {alt_s}  AGL {agl_s}  |  {shutter_s}  f/{fnum_s}  ISO {iso_s}"
 
         line2 = f"Spd {spd_h_s}  Climb {spd_v_s}\\N{orient_s}"

@@ -1,4 +1,0 @@
-# For build_utm_grid_overlay.py
-opencv-python>=4.5
-numpy>=1.20
-utm>=0.7

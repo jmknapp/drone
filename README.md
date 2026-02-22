@@ -6,7 +6,6 @@ Scripts to overlay telemetry from DJI SRT files onto drone video as a **green HU
 
 - **Python 3** (standard library)
 - **FFmpeg** (with libx264, libass, AAC support)
-- **utm** (optional, for UTM coordinates on HUD): `pip install utm`
 
 ## Input Files and Base Name or Directory
 
@@ -44,7 +43,7 @@ chmod +x render_hud.sh
 ./render_hud.sh DJI_20260217162018_0009_D
 
 # Or a directory that contains one .srt, .mp4, .m4a with the same stem
-./render_hud.sh /path/to/clips
+./render_hud.sh /path/to/clips (e.g. ./render_hud.sh ./altitude_test)
 
 # Imperial (feet, mph)
 ./render_hud.sh DJI_20260217162018_0009_D --imperial
@@ -57,42 +56,11 @@ Output: **`BASE_HUD.mp4`** (e.g. `DJI_20260217162018_0009_D_HUD.mp4`).
 ### HUD contents
 
 - Time (seconds to one decimal)
-- Latitude, longitude (and UTM zone/easting/northing when `utm` is installed)
+- Latitude, longitude; relative N/E from start (feet or meters)
 - Altitude (MSL) and AGL (above ground level)
 - Camera: shutter, f-number, ISO
 - Speed (horizontal, smoothed) and climb rate (vertical speed, smoothed)
 - Roll, pitch, heading (0–360°)
-
----
-
-## UTM Grid Overlay
-
-Overlays a **perspective-correct UTM grid** (100 ft / ~30.5 m intervals) on the video, projected onto the ground plane using camera pose from SRT telemetry.
-
-### Prerequisites
-
-- **Python 3** with `opencv-python`, `numpy`, and `utm`
-- Video resolution typically 1920×1080 (camera intrinsics tuned for DJI NEO2)
-
-### Usage
-
-```bash
-source venv/bin/activate
-python3 build_utm_grid_overlay.py altitude_test/DJI_20260217162018_0009_D
-```
-
-Output: `BASE_utm_grid.mp4`.
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `-o FILE` | Output path (default: BASE_utm_grid.mp4) |
-| `--ground-alt M` | Ground plane altitude in meters (default: first frame AGL=0) |
-| `--extent M` | Half extent of grid in meters (default: 200) |
-| `--fx`, `--fy` | Camera focal length (default: ~637 for NEO2 119.8° FOV) |
-| `--thickness N` | Line thickness (default: 1) |
-| `-q` | Quiet (no progress) |
 
 ---
 
@@ -104,4 +72,3 @@ All commands take **BASE_OR_DIR**: base name (scripts append `.srt`, `.mp4`, `.m
 |------|--------|
 | HUD video (metric) | `./render_hud.sh BASE_OR_DIR` |
 | HUD video (imperial) | `./render_hud.sh BASE_OR_DIR --imperial` |
-| UTM grid overlay | `python3 build_utm_grid_overlay.py BASE` |
