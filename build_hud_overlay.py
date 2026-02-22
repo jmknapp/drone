@@ -225,7 +225,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     spd_v_filtered = apply_vertical_velocity_filter(raw_spd_v)
 
     ref_lat = ref_lon = None
-    for rec in records:
+    ref_index = -1
+    for idx, rec in enumerate(records):
         if not rec.get("lat") or not rec.get("lon"):
             continue
         try:
@@ -233,6 +234,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             lon_f = float(rec["lon"])
             if lat_f != 0.0 and lon_f != 0.0:
                 ref_lat, ref_lon = lat_f, lon_f
+                ref_index = idx
                 break
         except (ValueError, TypeError):
             pass
@@ -292,7 +294,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         iso_s = f"{rec['iso']:>4}"
         ev_s = f"EV {rec['ev']:>3}" if rec.get("ev") else ""
         pos_line = f"{lat_s}, {lon_s}"
-        if ref_lat is not None and ref_lon is not None and rec["lat"] and rec["lon"]:
+        if i < ref_index or ref_lat is None or ref_lon is None:
+            pos_line += "\\NRelative: ---"
+        elif rec["lat"] and rec["lon"]:
             pos_line += f"\\N{latlon_to_relative_str(float(rec['lat']), float(rec['lon']), ref_lat, ref_lon, imperial)}"
         cam_part = f"{shutter_s}  f/{fnum_s}  ISO {iso_s}"
         if ev_s:
