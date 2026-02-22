@@ -12,13 +12,13 @@ Scripts to overlay telemetry from DJI SRT files onto drone video as a **green HU
 You pass either a **base name** or a **directory** (no default):
 
 - **Base name** (e.g. `DJI_20260217162018_0009_D`): the scripts **append** `.srt`, `.mp4`, `.m4a` for inputs and create `BASE_HUD.ass` and `BASE_HUD.mp4`.
-- **Directory**: the scripts look in that directory for **one** file with extension `.srt`, **one** with `.mp4`, and **one** with `.m4a`. The three files must share the same base name (e.g. `DJI_20260217162018_0009_D.srt`, `.mp4`, `.m4a`). Extensions are matched case-insensitively (`.srt`/`.SRT`, etc.).
+- **Directory**: the scripts look in that directory for **one** file with extension `.srt`, **one** with `.mp4`, and **one** with `.m4a`. The three files must share the same base name (e.g. `DJI_20260217162018_0009_D.srt`, `.mp4`, `.m4a`). Extensions are matched case-insensitively (`.srt`/`.SRT`, etc.). Use `--no-audio` to skip the `.m4a` requirement and use audio from the MP4 instead.
 
 | Extension | Used for |
 |-----------|----------|
 | `.srt` | Telemetry input (per-frame GPS, orientation, exposure, etc.) |
 | `.mp4` | Video input and HUD output |
-| `.m4a` | Audio input |
+| `.m4a` | Audio input (optional with `--no-audio`; uses MP4 audio when skipped) |
 
 Example with base name `DJI_20260217162018_0009_D`:
 
@@ -49,6 +49,11 @@ chmod +x render_hud.sh
 ./render_hud.sh DJI_20260217162018_0009_D --imperial
 # or
 ./render_hud.sh /path/to/clips -i
+
+# Skip external .m4a and use MP4 audio (when MP4 already has audio)
+./render_hud.sh DJI_20260217162018_0009_D --no-audio
+# or
+./render_hud.sh /path/to/clips -n
 ```
 
 Output: **`BASE_HUD.mp4`** (e.g. `DJI_20260217162018_0009_D_HUD.mp4`).
@@ -72,3 +77,4 @@ All commands take **BASE_OR_DIR**: base name (scripts append `.srt`, `.mp4`, `.m
 |------|--------|
 | HUD video (metric) | `./render_hud.sh BASE_OR_DIR` |
 | HUD video (imperial) | `./render_hud.sh BASE_OR_DIR --imperial` |
+| HUD video (MP4 audio only, no .m4a) | `./render_hud.sh BASE_OR_DIR --no-audio` |

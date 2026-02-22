@@ -9,6 +9,8 @@ import re
 import sys
 from pathlib import Path
 
+from velocity_filters import apply_velocity_filter
+
 M_TO_FT = 3.28084
 MPS_TO_MPH = 2.23694
 
@@ -25,10 +27,10 @@ def latlon_to_relative_str(
     if imperial:
         dn *= M_TO_FT
         de *= M_TO_FT
-        unit = "feet"
+        unit = "ft"
     else:
         unit = "m"
-    return f"Relative {unit}: {dn:+6.1f} N  {de:+6.1f} E"
+    return f"Relative: {dn:+.1f}{unit} N, {de:+.1f}{unit} E"
 
 
 def quat_to_euler_deg(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
@@ -94,6 +96,7 @@ def parse_srt_block(block: str) -> dict | None:
     iso = get("iso")
     shutter = get("shutter")
     fnum = get("fnum")
+    ev = get("ev")
 
     # Gimbal: pp_target quaternion (w,x,y,z) and pp_limit_ratio
     pp_target = get("pp_target")  # e.g. "0.159, -0.000, -0.000, -0.987"
@@ -119,6 +122,7 @@ def parse_srt_block(block: str) -> dict | None:
         "iso": iso,
         "shutter": shutter,
         "fnum": fnum,
+        "ev": ev,
         "pp_limit_ratio": pp_limit_ratio,
         "quat_w": quat_w,
         "quat_x": quat_x,
@@ -162,37 +166,63 @@ Style: HUD,DejaVu Sans Mono,30,&H0000FF00,&H00000000,&H00000000,&H80000000,-1,0,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    # Compute raw instantaneous speed per frame (from previous frame)
+    # Compute raw speed per frame using symmetric derivative (prev, next) when possible,
+    # matching export_velocity_csv so the filter receives comparable input.
     raw_spd_h: list[float | None] = [None] * len(records)
     raw_spd_v: list[float | None] = [None] * len(records)
-    for i in range(1, len(records)):
-        rec, prev = records[i], records[i - 1]
-        dt = rec["start"] - prev["start"]
-        if dt <= 0:
-            continue
-        try:
-            lat_f = float(rec["lat"])
-            lon_f = float(rec["lon"])
-            alt_f = float(rec["abs_alt"]) if rec["abs_alt"] else 0.0
-            plat = float(prev["lat"])
-            plon = float(prev["lon"])
-            palt = float(prev["abs_alt"]) if prev["abs_alt"] else 0.0
-            raw_spd_h[i] = haversine_m(plat, plon, lat_f, lon_f) / dt
-            raw_spd_v[i] = (alt_f - palt) / dt
-        except (ValueError, TypeError):
-            pass
+    for i in range(len(records)):
+        rec = records[i]
+        prev = records[i - 1] if i > 0 else None
+        next_rec = records[i + 1] if i + 1 < len(records) else None
+        if prev is not None and next_rec is not None:
+            dt = next_rec["start"] - prev["start"]
+            if dt <= 0:
+                continue
+            try:
+                lat_p = float(prev["lat"])
+                lon_p = float(prev["lon"])
+                alt_p = float(prev["abs_alt"]) if prev["abs_alt"] else 0.0
+                lat_n = float(next_rec["lat"])
+                lon_n = float(next_rec["lon"])
+                alt_n = float(next_rec["abs_alt"]) if next_rec["abs_alt"] else 0.0
+                raw_spd_h[i] = haversine_m(lat_p, lon_p, lat_n, lon_n) / dt
+                raw_spd_v[i] = (alt_n - alt_p) / dt
+            except (ValueError, TypeError):
+                pass
+        elif prev is not None:
+            dt = rec["start"] - prev["start"]
+            if dt <= 0:
+                continue
+            try:
+                lat_p = float(prev["lat"])
+                lon_p = float(prev["lon"])
+                alt_p = float(prev["abs_alt"]) if prev["abs_alt"] else 0.0
+                lat_f = float(rec["lat"])
+                lon_f = float(rec["lon"])
+                alt_f = float(rec["abs_alt"]) if rec["abs_alt"] else 0.0
+                raw_spd_h[i] = haversine_m(lat_p, lon_p, lat_f, lon_f) / dt
+                raw_spd_v[i] = (alt_f - alt_p) / dt
+            except (ValueError, TypeError):
+                pass
+        elif next_rec is not None:
+            dt = next_rec["start"] - rec["start"]
+            if dt <= 0:
+                continue
+            try:
+                lat_f = float(rec["lat"])
+                lon_f = float(rec["lon"])
+                alt_f = float(rec["abs_alt"]) if rec["abs_alt"] else 0.0
+                lat_n = float(next_rec["lat"])
+                lon_n = float(next_rec["lon"])
+                alt_n = float(next_rec["abs_alt"]) if next_rec["abs_alt"] else 0.0
+                raw_spd_h[i] = haversine_m(lat_f, lon_f, lat_n, lon_n) / dt
+                raw_spd_v[i] = (alt_n - alt_f) / dt
+            except (ValueError, TypeError):
+                pass
 
-    # Centered moving average to smooth speed (window ~0.5 s at 30 fps)
-    SMOOTH_WINDOW = 15
-    half = SMOOTH_WINDOW // 2
-
-    def smooth(values: list[float | None], i: int) -> float | None:
-        start = max(0, i - half)
-        end = min(len(values), i + half + 1)
-        window = [v for v in values[start:end] if v is not None]
-        if not window:
-            return None
-        return sum(window) / len(window)
+    # Same filter as export_velocity_csv: median + trimmed mean
+    spd_h_filtered = apply_velocity_filter(raw_spd_h)
+    spd_v_filtered = apply_velocity_filter(raw_spd_v)
 
     ref_lat = ref_lon = None
     if records and records[0].get("lat") and records[0].get("lon"):
@@ -206,8 +236,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         start = sec_to_ass_time(rec["start"])
         end = sec_to_ass_time(rec["end"])
 
-        spd_h = smooth(raw_spd_h, i)
-        spd_v = smooth(raw_spd_v, i)
+        spd_h = spd_h_filtered[i]
+        spd_v = spd_v_filtered[i]
         if imperial:
             spd_h = spd_h * MPS_TO_MPH if spd_h is not None else None
             spd_v_fts = spd_v * M_TO_FT if spd_v is not None else None
@@ -255,10 +285,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         shutter_s = f"{rec['shutter']:>8}"
         fnum_s = f"{rec['fnum']:>4}"
         iso_s = f"{rec['iso']:>4}"
+        ev_s = f"EV {rec['ev']:>3}" if rec.get("ev") else ""
         pos_line = f"{lat_s}, {lon_s}"
         if ref_lat is not None and ref_lon is not None and rec["lat"] and rec["lon"]:
             pos_line += f"\\N{latlon_to_relative_str(float(rec['lat']), float(rec['lon']), ref_lat, ref_lon, imperial)}"
-        line1 = f"{ts}\\N{pos_line}\\NALT {alt_s}  AGL {agl_s}  |  {shutter_s}  f/{fnum_s}  ISO {iso_s}"
+        cam_part = f"{shutter_s}  f/{fnum_s}  ISO {iso_s}"
+        if ev_s:
+            cam_part += f"  {ev_s}"
+        line1 = f"{ts}\\N{pos_line}\\NALT {alt_s}  AGL {agl_s}  |  {cam_part}"
 
         line2 = f"Spd {spd_h_s}  Climb {spd_v_s}\\N{orient_s}"
         text = f"{line1}\\N{line2}"
