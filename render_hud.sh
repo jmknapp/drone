@@ -64,7 +64,7 @@ python3 build_hud_overlay.py "${IMPERIAL[@]}" "$BASE"
 
 if [[ "$NO_AUDIO" == "true" || -z "$M4A" ]]; then
   echo "Rendering video with HUD (using MP4 audio if present)..."
-  ffmpeg -y \
+  ffmpeg -hide_banner -loglevel error -y \
     -i "$MP4" \
     -vf "ass=$ASS" \
     -map 0:v:0 -map 0:a? \
@@ -75,7 +75,7 @@ if [[ "$NO_AUDIO" == "true" || -z "$M4A" ]]; then
     "$OUT"
 else
   echo "Rendering video with HUD and audio (Main profile for wide compatibility)..."
-  ffmpeg -y \
+  ffmpeg -hide_banner -loglevel error -y \
     -i "$MP4" \
     -i "$M4A" \
     -map 0:0 -map 1:0 \
