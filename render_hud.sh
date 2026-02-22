@@ -67,7 +67,7 @@ if [[ "$NO_AUDIO" == "true" || -z "$M4A" ]]; then
   ffmpeg -y \
     -i "$MP4" \
     -vf "ass=$ASS" \
-    -map 0:v -map 0:a? \
+    -map 0:v:0 -map 0:a? \
     -c:v libx264 -preset medium -crf 23 \
     -profile:v main -level 4.0 \
     -c:a copy \
