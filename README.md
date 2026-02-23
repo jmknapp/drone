@@ -4,8 +4,22 @@ Scripts to overlay telemetry from DJI SRT files onto drone video as a **green HU
 
 ## Prerequisites
 
-- **Python 3** (standard library)
+- **Python 3** (standard library for HUD/export; optional `folium` for flight map)
 - **FFmpeg** (with libx264, libass, AAC support)
+
+## Setup
+
+Optional but recommended: use a virtual environment so the flight-map script can install `folium` without touching the system Python.
+
+```bash
+python3 -m venv venv
+source venv/bin/activate   # Linux/macOS
+# or:  venv\Scripts\activate   # Windows
+
+pip install -r requirements.txt
+```
+
+(`requirements.txt` only adds **folium** for `srt_to_map.py`; the HUD and CSV scripts need no extra packages.)
 
 ## Input Files and Base Name or Directory
 
@@ -69,6 +83,36 @@ Output: **`BASE_HUD.mp4`** (e.g. `DJI_20260217162018_0009_D_HUD.mp4`).
 
 ---
 
+## Flight path map
+
+Creates an interactive HTML map of the flight from the SRT’s GPS track (OpenStreetMap + optional satellite layer). Requires the venv and `pip install -r requirements.txt` (folium).
+
+### Quick start
+
+```bash
+source venv/bin/activate   # or venv\Scripts\activate on Windows
+
+python srt_to_map.py altitude_test/DJI_20260217162018_0009_D
+# → altitude_test/DJI_20260217162018_0009_D_flight_map.html
+
+# Custom output path
+python srt_to_map.py BASE -O my_flight.html
+
+# Long flights: use every 30th point (~1 per second at 30 fps)
+python srt_to_map.py BASE --downsample 30
+```
+
+Open the `.html` file in a browser (double-click, or File → Open file in Chrome).
+
+### Map contents
+
+- **Blue line** – flight path
+- **Green marker** – start
+- **Red marker** – end
+- **Layers** – switch in the top-right between **OpenStreetMap** (streets) and **Satellite** (Esri World Imagery)
+
+---
+
 ## Summary
 
 All commands take **BASE_OR_DIR**: base name (scripts append `.srt`, `.mp4`, `.m4a`) or a directory that contains one `.srt`, one `.mp4`, and one `.m4a` with the same stem.
@@ -78,3 +122,4 @@ All commands take **BASE_OR_DIR**: base name (scripts append `.srt`, `.mp4`, `.m
 | HUD video (metric) | `./render_hud.sh BASE_OR_DIR` |
 | HUD video (imperial) | `./render_hud.sh BASE_OR_DIR --imperial` |
 | HUD video (MP4 audio only, no .m4a) | `./render_hud.sh BASE_OR_DIR --no-audio` |
+| Flight path map (OSM + satellite HTML) | `python srt_to_map.py BASE_OR_DIR` (requires venv + folium, see Setup) |

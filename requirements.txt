@@ -1,0 +1,3 @@
+# HUD/export scripts use only the standard library.
+# Optional: for srt_to_map.py (flight path map)
+folium>=0.15.0
