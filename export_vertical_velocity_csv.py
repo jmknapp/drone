@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Export vertical velocity (m/s) vs timestamp to CSV from DJI SRT telemetry.
-One row per frame. Output: timestamp,vertical_velocity (seconds from start, m/s).
+One row per frame. Output: timestamp, raw_velocity, filtered_velocity (seconds from start, m/s).
 """
 import argparse
 import csv
@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from build_hud_overlay import parse_srt_block
+from velocity_filters import apply_vertical_velocity_filter
 
 
 def load_srt_records(srt_path: Path) -> list[dict]:
@@ -73,7 +74,14 @@ def main() -> None:
         type=str,
         help="Base name (script uses .srt); output: BASE_vertical_velocity.csv",
     )
-    p.add_argument("-o", "--output", type=str, help="Output CSV path")
+    p.add_argument("-o", "-O", "--output", type=str, dest="output", help="Output CSV path")
+    p.add_argument(
+        "--velocity-window",
+        type=int,
+        default=0,
+        metavar="N",
+        help="If N>0, add column: vertical velocity from frame vs N frames back (~1 s for 30)",
+    )
     args = p.parse_args()
 
     base = Path(args.base)
@@ -88,17 +96,48 @@ def main() -> None:
         raise SystemExit(f"No records in {srt_path}")
 
     t0 = records[0]["start"]
+    raw_velocities = []
+    for i, rec in enumerate(records):
+        prev = records[i - 1] if i > 0 else None
+        next_rec = records[i + 1] if i + 1 < len(records) else None
+        raw_velocities.append(vertical_velocity_mps(rec, prev, next_rec))
+    filtered_velocities = apply_vertical_velocity_filter(raw_velocities)
+
+    window_velocities: list[float | None] = [None] * len(records)
+    if args.velocity_window > 0:
+        for i in range(len(records)):
+            j = max(0, i - args.velocity_window)
+            if j == i:
+                continue
+            dt = records[i]["start"] - records[j]["start"]
+            if dt <= 0:
+                continue
+            try:
+                alt_i = float(records[i]["abs_alt"]) if records[i].get("abs_alt") else 0.0
+                alt_j = float(records[j]["abs_alt"]) if records[j].get("abs_alt") else 0.0
+                window_velocities[i] = (alt_i - alt_j) / dt
+            except (ValueError, TypeError):
+                pass
+
     out_path = Path(args.output) if args.output else base.with_name(base.stem + "_vertical_velocity.csv")
 
     with open(out_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["timestamp", "vertical_velocity"])
+        headers = ["timestamp", "raw_velocity", "filtered_velocity"]
+        if args.velocity_window > 0:
+            headers.append("window_velocity")
+        w.writerow(headers)
         for i, rec in enumerate(records):
-            prev = records[i - 1] if i > 0 else None
-            next_rec = records[i + 1] if i + 1 < len(records) else None
             timestamp = rec["start"] - t0
-            vel_v = vertical_velocity_mps(rec, prev, next_rec)
-            w.writerow([f"{timestamp:.3f}", f"{vel_v:.4f}" if vel_v is not None else ""])
+            row = [
+                f"{timestamp:.3f}",
+                f"{raw_velocities[i]:.4f}" if raw_velocities[i] is not None else "",
+                f"{filtered_velocities[i]:.4f}" if filtered_velocities[i] is not None else "",
+            ]
+            if args.velocity_window > 0:
+                wv = window_velocities[i]
+                row.append(f"{wv:.4f}" if wv is not None else "")
+            w.writerow(row)
 
     print(f"Wrote {len(records)} rows to {out_path}", file=sys.stderr)
 

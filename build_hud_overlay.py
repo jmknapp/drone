@@ -98,13 +98,15 @@ def parse_srt_block(block: str) -> dict | None:
     fnum = get("fnum")
     ev = get("ev")
 
-    # Gimbal: pp_target quaternion (w,x,y,z) and pp_limit_ratio
+    # Gimbal: use pp_current (actual pose), fallback to pp_target; pp_limit_ratio
+    pp_current = get("pp_current")
     pp_target = get("pp_target")  # e.g. "0.159, -0.000, -0.000, -0.987"
     pp_limit_ratio = get("pp_limit_ratio")
+    pp_quat = pp_current or pp_target
 
     quat_w = quat_x = quat_y = quat_z = None
-    if pp_target:
-        parts = [p.strip() for p in pp_target.split(",")]
+    if pp_quat:
+        parts = [p.strip() for p in pp_quat.split(",")]
         if len(parts) == 4:
             try:
                 quat_w, quat_x, quat_y, quat_z = (float(p) for p in parts)
@@ -139,7 +141,7 @@ def sec_to_ass_time(sec: float) -> str:
     return f"{h}:{m:02d}:{s:05.2f}"
 
 
-def build_ass(srt_path: Path, out_path: Path, imperial: bool = False) -> None:
+def build_ass(srt_path: Path, out_path: Path, imperial: bool = False, velocity_window: int = 15) -> None:
     content = srt_path.read_text(encoding="utf-8", errors="replace")
     blocks = re.split(r"\n\n+", content)
 
@@ -166,63 +168,84 @@ Style: HUD,DejaVu Sans Mono,30,&H0000FF00,&H00000000,&H00000000,&H80000000,-1,0,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    # Compute raw speed per frame using symmetric derivative (prev, next) when possible,
-    # matching export_velocity_csv so the filter receives comparable input.
-    raw_spd_h: list[float | None] = [None] * len(records)
-    raw_spd_v: list[float | None] = [None] * len(records)
-    for i in range(len(records)):
-        rec = records[i]
-        prev = records[i - 1] if i > 0 else None
-        next_rec = records[i + 1] if i + 1 < len(records) else None
-        if prev is not None and next_rec is not None:
-            dt = next_rec["start"] - prev["start"]
+    if velocity_window > 0:
+        # Speed from current frame vs N frames back (~1 s for N=30).
+        spd_h_filtered = [None] * len(records)
+        spd_v_filtered = [None] * len(records)
+        for i in range(len(records)):
+            j = max(0, i - velocity_window)
+            if j == i:
+                continue
+            dt = records[i]["start"] - records[j]["start"]
             if dt <= 0:
                 continue
             try:
-                lat_p = float(prev["lat"])
-                lon_p = float(prev["lon"])
-                alt_p = float(prev["abs_alt"]) if prev["abs_alt"] else 0.0
-                lat_n = float(next_rec["lat"])
-                lon_n = float(next_rec["lon"])
-                alt_n = float(next_rec["abs_alt"]) if next_rec["abs_alt"] else 0.0
-                raw_spd_h[i] = haversine_m(lat_p, lon_p, lat_n, lon_n) / dt
-                raw_spd_v[i] = (alt_n - alt_p) / dt
+                lat_i = float(records[i]["lat"])
+                lon_i = float(records[i]["lon"])
+                alt_i = float(records[i]["abs_alt"]) if records[i].get("abs_alt") else 0.0
+                lat_j = float(records[j]["lat"])
+                lon_j = float(records[j]["lon"])
+                alt_j = float(records[j]["abs_alt"]) if records[j].get("abs_alt") else 0.0
+                spd_h_filtered[i] = haversine_m(lat_j, lon_j, lat_i, lon_i) / dt
+                spd_v_filtered[i] = (alt_i - alt_j) / dt
             except (ValueError, TypeError):
                 pass
-        elif prev is not None:
-            dt = rec["start"] - prev["start"]
-            if dt <= 0:
-                continue
-            try:
-                lat_p = float(prev["lat"])
-                lon_p = float(prev["lon"])
-                alt_p = float(prev["abs_alt"]) if prev["abs_alt"] else 0.0
-                lat_f = float(rec["lat"])
-                lon_f = float(rec["lon"])
-                alt_f = float(rec["abs_alt"]) if rec["abs_alt"] else 0.0
-                raw_spd_h[i] = haversine_m(lat_p, lon_p, lat_f, lon_f) / dt
-                raw_spd_v[i] = (alt_f - alt_p) / dt
-            except (ValueError, TypeError):
-                pass
-        elif next_rec is not None:
-            dt = next_rec["start"] - rec["start"]
-            if dt <= 0:
-                continue
-            try:
-                lat_f = float(rec["lat"])
-                lon_f = float(rec["lon"])
-                alt_f = float(rec["abs_alt"]) if rec["abs_alt"] else 0.0
-                lat_n = float(next_rec["lat"])
-                lon_n = float(next_rec["lon"])
-                alt_n = float(next_rec["abs_alt"]) if next_rec["abs_alt"] else 0.0
-                raw_spd_h[i] = haversine_m(lat_f, lon_f, lat_n, lon_n) / dt
-                raw_spd_v[i] = (alt_n - alt_f) / dt
-            except (ValueError, TypeError):
-                pass
+    else:
+        # Compute raw speed per frame using symmetric derivative (prev, next) when possible.
+        raw_spd_h: list[float | None] = [None] * len(records)
+        raw_spd_v: list[float | None] = [None] * len(records)
+        for i in range(len(records)):
+            rec = records[i]
+            prev = records[i - 1] if i > 0 else None
+            next_rec = records[i + 1] if i + 1 < len(records) else None
+            if prev is not None and next_rec is not None:
+                dt = next_rec["start"] - prev["start"]
+                if dt <= 0:
+                    continue
+                try:
+                    lat_p = float(prev["lat"])
+                    lon_p = float(prev["lon"])
+                    alt_p = float(prev["abs_alt"]) if prev["abs_alt"] else 0.0
+                    lat_n = float(next_rec["lat"])
+                    lon_n = float(next_rec["lon"])
+                    alt_n = float(next_rec["abs_alt"]) if next_rec["abs_alt"] else 0.0
+                    raw_spd_h[i] = haversine_m(lat_p, lon_p, lat_n, lon_n) / dt
+                    raw_spd_v[i] = (alt_n - alt_p) / dt
+                except (ValueError, TypeError):
+                    pass
+            elif prev is not None:
+                dt = rec["start"] - prev["start"]
+                if dt <= 0:
+                    continue
+                try:
+                    lat_p = float(prev["lat"])
+                    lon_p = float(prev["lon"])
+                    alt_p = float(prev["abs_alt"]) if prev["abs_alt"] else 0.0
+                    lat_f = float(rec["lat"])
+                    lon_f = float(rec["lon"])
+                    alt_f = float(rec["abs_alt"]) if rec["abs_alt"] else 0.0
+                    raw_spd_h[i] = haversine_m(lat_p, lon_p, lat_f, lon_f) / dt
+                    raw_spd_v[i] = (alt_f - alt_p) / dt
+                except (ValueError, TypeError):
+                    pass
+            elif next_rec is not None:
+                dt = next_rec["start"] - rec["start"]
+                if dt <= 0:
+                    continue
+                try:
+                    lat_f = float(rec["lat"])
+                    lon_f = float(rec["lon"])
+                    alt_f = float(rec["abs_alt"]) if rec["abs_alt"] else 0.0
+                    lat_n = float(next_rec["lat"])
+                    lon_n = float(next_rec["lon"])
+                    alt_n = float(next_rec["abs_alt"]) if next_rec["abs_alt"] else 0.0
+                    raw_spd_h[i] = haversine_m(lat_f, lon_f, lat_n, lon_n) / dt
+                    raw_spd_v[i] = (alt_n - alt_f) / dt
+                except (ValueError, TypeError):
+                    pass
 
-    # Horizontal: full filter (median + trimmed mean). Vertical: median only to preserve small climb/descent.
-    spd_h_filtered = apply_velocity_filter(raw_spd_h)
-    spd_v_filtered = apply_vertical_velocity_filter(raw_spd_v)
+        spd_h_filtered = apply_velocity_filter(raw_spd_h)
+        spd_v_filtered = apply_vertical_velocity_filter(raw_spd_v)
 
     ref_lat = ref_lon = None
     ref_index = -1
@@ -261,10 +284,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             roll, pitch, yaw = quat_to_euler_deg(
                 rec["quat_w"], rec["quat_x"], rec["quat_y"], rec["quat_z"]
             )
+            # Snap near-zero to 0 to avoid -0/0 sign flicker
+            if abs(roll) < 0.5:
+                roll = 0.0
+            if abs(pitch) < 0.5:
+                pitch = 0.0
             hdg = (int(round(yaw)) + 360) % 360
             gimbal_down = abs(pitch + 90) < 5
             if gimbal_down:
-                orient_s = f"Roll  ---°  Pitch {pitch:4.0f}°  Hdg {hdg:3d}°"
+                # Yaw from quaternion is degenerate at pitch=-90° (gimbal lock), so don't show it
+                orient_s = f"Roll  ---°  Pitch {pitch:4.0f}°  Hdg  ---°"
             else:
                 orient_s = f"Roll {roll:4.0f}°  Pitch {pitch:4.0f}°  Hdg {hdg:3d}°"
 
@@ -314,6 +343,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 def main() -> None:
     p = argparse.ArgumentParser(description="Build DJI telemetry HUD overlay (ASS) from SRT.")
     p.add_argument("-i", "--imperial", action="store_true", help="Use feet and mph instead of meters and m/s")
+    p.add_argument(
+        "--velocity-window",
+        type=int,
+        default=15,
+        metavar="N",
+        help="Compute speed from frame vs N frames back (default 15); use 0 for frame-to-frame + filter",
+    )
     p.add_argument("base", type=str, help="Base name for clip (script appends .srt for input, _HUD.ass for output)")
     args = p.parse_args()
     base = Path(args.base)
@@ -323,7 +359,7 @@ def main() -> None:
     if not srt_path.exists():
         raise SystemExit(f"SRT file not found: {base.with_suffix('.srt')} or {base.with_suffix('.SRT')}")
     out_path = base.with_name(base.stem + "_HUD.ass")
-    build_ass(srt_path, out_path, imperial=args.imperial)
+    build_ass(srt_path, out_path, imperial=args.imperial, velocity_window=args.velocity_window)
 
 
 if __name__ == "__main__":
