@@ -1,6 +1,6 @@
 # DJI Drone Telemetry Overlay Scripts
 
-Scripts to overlay telemetry from DJI SRT files onto drone video as a **green HUD** burn-in.
+Scripts to overlay telemetry from DJI SRT files (e.g. **DJI Neo 2**) onto drone video as a **green HUD** burn-in.
 
 ## Prerequisites
 

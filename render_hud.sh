@@ -1,29 +1,44 @@
 #!/bin/bash
 # Build HUD overlay and render MP4 with telemetry burn-in and audio.
-# Usage: ./render_hud.sh [--imperial | -i] [--no-audio | -n] BASE_OR_DIR
+# Usage: ./render_hud.sh [--imperial | -i] [--no-audio | -n] [--dheading DEG] BASE_OR_DIR
 #   BASE_OR_DIR = base name (script appends .srt, .mp4, .m4a), or directory containing one .srt, .mp4, .m4a
 #   --no-audio = use audio from MP4 only (skip external .m4a; use when MP4 already has audio)
+#   --dheading DEG = add DEG degrees to HUD heading (corrected to 0-360)
 set -e
 cd "$(dirname "$0")"
 
 IMPERIAL=()
 NO_AUDIO=false
-while [[ "$1" == "--imperial" || "$1" == "-i" || "$1" == "--no-audio" || "$1" == "-n" ]]; do
-  if [[ "$1" == "--no-audio" || "$1" == "-n" ]]; then
-    NO_AUDIO=true
-  else
-    IMPERIAL=("$1")
-  fi
-  shift
+DHEADING=()
+ARG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --imperial|-i) IMPERIAL=("$1"); shift ;;
+    --no-audio|-n) NO_AUDIO=true; shift ;;
+    --dheading|-dheading)
+      shift
+      [[ -z "${1:-}" ]] && { echo "Missing value for --dheading" >&2; exit 1; }
+      DHEADING=("--dheading" "$1")
+      shift
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      [[ -n "$ARG" ]] && { echo "Multiple paths given: $ARG and $1" >&2; exit 1; }
+      ARG="$1"
+      shift
+      ;;
+  esac
 done
-if [[ -z "$1" ]]; then
-  echo "Usage: $0 [--imperial | -i] [--no-audio | -n] BASE_OR_DIR" >&2
+if [[ -z "$ARG" ]]; then
+  echo "Usage: $0 [--imperial | -i] [--no-audio | -n] [--dheading DEG] BASE_OR_DIR" >&2
   echo "  BASE_OR_DIR = base name or directory containing one .srt, .mp4, .m4a" >&2
   echo "  --no-audio, -n = use MP4 audio only (skip external .m4a)" >&2
+  echo "  --dheading DEG = add DEG degrees to HUD heading (use --dheading, not -dheading)" >&2
   exit 1
 fi
-ARG="$1"
-shift
 if [[ -d "$ARG" ]]; then
   SRT_FILE=$(find "$ARG" -maxdepth 1 -type f \( -iname "*.srt" \) | head -1)
   if [[ -z "$SRT_FILE" ]]; then
@@ -60,7 +75,7 @@ ASS="${BASE}_HUD.ass"
 OUT="${BASE}_HUD.mp4"
 
 echo "Building HUD overlay from ${SRT}..."
-python3 build_hud_overlay.py "${IMPERIAL[@]}" "$BASE"
+python3 build_hud_overlay.py "${IMPERIAL[@]}" "${DHEADING[@]}" "$BASE"
 
 # Get total frame count for progress
 duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$MP4" 2>/dev/null || echo 0)

@@ -141,7 +141,13 @@ def sec_to_ass_time(sec: float) -> str:
     return f"{h}:{m:02d}:{s:05.2f}"
 
 
-def build_ass(srt_path: Path, out_path: Path, imperial: bool = False, velocity_window: int = 15) -> None:
+def build_ass(
+    srt_path: Path,
+    out_path: Path,
+    imperial: bool = False,
+    velocity_window: int = 15,
+    dheading: float = 0.0,
+) -> None:
     content = srt_path.read_text(encoding="utf-8", errors="replace")
     blocks = re.split(r"\n\n+", content)
 
@@ -289,7 +295,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 roll = 0.0
             if abs(pitch) < 0.5:
                 pitch = 0.0
-            hdg = (int(round(yaw)) + 360) % 360
+            hdg = (int(round(yaw)) + 360 + int(round(dheading))) % 360
             gimbal_down = abs(pitch + 90) < 5
             if gimbal_down:
                 # Yaw from quaternion is degenerate at pitch=-90° (gimbal lock), so don't show it
@@ -350,6 +356,13 @@ def main() -> None:
         metavar="N",
         help="Compute speed from frame vs N frames back (default 15); use 0 for frame-to-frame + filter",
     )
+    p.add_argument(
+        "--dheading",
+        type=float,
+        default=0.0,
+        metavar="DEG",
+        help="Add DEG degrees to heading (corrected value shown as 0–360°)",
+    )
     p.add_argument("base", type=str, help="Base name for clip (script appends .srt for input, _HUD.ass for output)")
     args = p.parse_args()
     base = Path(args.base)
@@ -359,7 +372,13 @@ def main() -> None:
     if not srt_path.exists():
         raise SystemExit(f"SRT file not found: {base.with_suffix('.srt')} or {base.with_suffix('.SRT')}")
     out_path = base.with_name(base.stem + "_HUD.ass")
-    build_ass(srt_path, out_path, imperial=args.imperial, velocity_window=args.velocity_window)
+    build_ass(
+        srt_path,
+        out_path,
+        imperial=args.imperial,
+        velocity_window=args.velocity_window,
+        dheading=args.dheading,
+    )
 
 
 if __name__ == "__main__":
