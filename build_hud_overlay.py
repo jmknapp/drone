@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 
-from velocity_filters import apply_velocity_filter, apply_vertical_velocity_filter
+from velocity_filters import apply_velocity_filter, apply_vertical_velocity_filter, moving_average_filter
 
 M_TO_FT = 3.28084
 MPS_TO_MPH = 2.23694
@@ -175,27 +175,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     if velocity_window > 0:
-        # Speed from current frame vs N frames back (~1 s for N=30).
+        # Speed from N frames back to N frames forward (symmetric ~1 s for N=15 at 30 fps).
         spd_h_filtered = [None] * len(records)
         spd_v_filtered = [None] * len(records)
         for i in range(len(records)):
-            j = max(0, i - velocity_window)
-            if j == i:
+            j_back = max(0, i - velocity_window)
+            j_forward = min(len(records) - 1, i + velocity_window)
+            if j_back == j_forward:
                 continue
-            dt = records[i]["start"] - records[j]["start"]
+            dt = records[j_forward]["start"] - records[j_back]["start"]
             if dt <= 0:
                 continue
             try:
-                lat_i = float(records[i]["lat"])
-                lon_i = float(records[i]["lon"])
-                alt_i = float(records[i]["abs_alt"]) if records[i].get("abs_alt") else 0.0
-                lat_j = float(records[j]["lat"])
-                lon_j = float(records[j]["lon"])
-                alt_j = float(records[j]["abs_alt"]) if records[j].get("abs_alt") else 0.0
-                spd_h_filtered[i] = haversine_m(lat_j, lon_j, lat_i, lon_i) / dt
-                spd_v_filtered[i] = (alt_i - alt_j) / dt
+                lat_b = float(records[j_back]["lat"])
+                lon_b = float(records[j_back]["lon"])
+                alt_b = float(records[j_back]["abs_alt"]) if records[j_back].get("abs_alt") else 0.0
+                lat_f = float(records[j_forward]["lat"])
+                lon_f = float(records[j_forward]["lon"])
+                alt_f = float(records[j_forward]["abs_alt"]) if records[j_forward].get("abs_alt") else 0.0
+                spd_h_filtered[i] = haversine_m(lat_b, lon_b, lat_f, lon_f) / dt
+                spd_v_filtered[i] = (alt_f - alt_b) / dt
             except (ValueError, TypeError):
                 pass
+        # Light moving-average smoothing over the window velocities
+        spd_h_filtered = moving_average_filter(spd_h_filtered, 5)
+        spd_v_filtered = moving_average_filter(spd_v_filtered, 5)
     else:
         # Compute raw speed per frame using symmetric derivative (prev, next) when possible.
         raw_spd_h: list[float | None] = [None] * len(records)
@@ -354,7 +358,7 @@ def main() -> None:
         type=int,
         default=15,
         metavar="N",
-        help="Compute speed from frame vs N frames back (default 15); use 0 for frame-to-frame + filter",
+        help="Compute speed from N frames back to N forward (default 15); use 0 for frame-to-frame + filter",
     )
     p.add_argument(
         "--dheading",

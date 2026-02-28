@@ -80,7 +80,7 @@ def main() -> None:
         type=int,
         default=0,
         metavar="N",
-        help="If N>0, add column: vertical velocity from frame vs N frames back (~1 s for 30)",
+        help="If N>0, add column: vertical velocity from N frames back to N forward (~1 s for N=15 at 30 fps)",
     )
     args = p.parse_args()
 
@@ -106,16 +106,17 @@ def main() -> None:
     window_velocities: list[float | None] = [None] * len(records)
     if args.velocity_window > 0:
         for i in range(len(records)):
-            j = max(0, i - args.velocity_window)
-            if j == i:
+            j_back = max(0, i - args.velocity_window)
+            j_forward = min(len(records) - 1, i + args.velocity_window)
+            if j_back == j_forward:
                 continue
-            dt = records[i]["start"] - records[j]["start"]
+            dt = records[j_forward]["start"] - records[j_back]["start"]
             if dt <= 0:
                 continue
             try:
-                alt_i = float(records[i]["abs_alt"]) if records[i].get("abs_alt") else 0.0
-                alt_j = float(records[j]["abs_alt"]) if records[j].get("abs_alt") else 0.0
-                window_velocities[i] = (alt_i - alt_j) / dt
+                alt_b = float(records[j_back]["abs_alt"]) if records[j_back].get("abs_alt") else 0.0
+                alt_f = float(records[j_forward]["abs_alt"]) if records[j_forward].get("abs_alt") else 0.0
+                window_velocities[i] = (alt_f - alt_b) / dt
             except (ValueError, TypeError):
                 pass
 

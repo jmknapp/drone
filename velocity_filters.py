@@ -29,6 +29,26 @@ def median_filter(values: list[float | None], window: int) -> list[float | None]
     return out
 
 
+def moving_average_filter(values: list[float | None], window: int) -> list[float | None]:
+    """
+    Apply centered moving average. Uses only valid values in each window;
+    output None if window has no valid values.
+    """
+    if window < 1:
+        return list(values)
+    half = window // 2
+    out: list[float | None] = []
+    for i in range(len(values)):
+        lo = max(0, i - half)
+        hi = min(len(values), i + half + 1)
+        win = [v for v in values[lo:hi] if v is not None]
+        if win:
+            out.append(sum(win) / len(win))
+        else:
+            out.append(None)
+    return out
+
+
 def trimmed_mean_filter(
     values: list[float | None], window: int, trim: int
 ) -> list[float | None]:
