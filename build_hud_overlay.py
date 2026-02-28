@@ -147,6 +147,7 @@ def build_ass(
     imperial: bool = False,
     velocity_window: int = 15,
     dheading: float = 0.0,
+    hide_location: bool = False,
 ) -> None:
     content = srt_path.read_text(encoding="utf-8", errors="replace")
     blocks = re.split(r"\n\n+", content)
@@ -332,11 +333,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         fnum_s = f"{rec['fnum']:>4}"
         iso_s = f"{rec['iso']:>4}"
         ev_s = f"EV {rec['ev']:>3}" if rec.get("ev") else ""
-        pos_line = f"{lat_s}, {lon_s}"
-        if i < ref_index or ref_lat is None or ref_lon is None:
-            pos_line += "\\NRelative: ---"
-        elif rec["lat"] and rec["lon"]:
-            pos_line += f"\\N{latlon_to_relative_str(float(rec['lat']), float(rec['lon']), ref_lat, ref_lon, imperial)}"
+        if hide_location:
+            pos_line = "—"
+        else:
+            pos_line = f"{lat_s}, {lon_s}"
+            if i < ref_index or ref_lat is None or ref_lon is None:
+                pos_line += "\\NRelative: ---"
+            elif rec["lat"] and rec["lon"]:
+                pos_line += f"\\N{latlon_to_relative_str(float(rec['lat']), float(rec['lon']), ref_lat, ref_lon, imperial)}"
         cam_part = f"{shutter_s}  f/{fnum_s}  ISO {iso_s}"
         if ev_s:
             cam_part += f"  {ev_s}"
@@ -367,6 +371,7 @@ def main() -> None:
         metavar="DEG",
         help="Add DEG degrees to heading (corrected value shown as 0–360°)",
     )
+    p.add_argument("-x", "--hide-location", action="store_true", help="Hide lat/lon and relative position (privacy)")
     p.add_argument("base", type=str, help="Base name for clip (script appends .srt for input, _HUD.ass for output)")
     args = p.parse_args()
     base = Path(args.base)
@@ -382,6 +387,7 @@ def main() -> None:
         imperial=args.imperial,
         velocity_window=args.velocity_window,
         dheading=args.dheading,
+        hide_location=args.hide_location,
     )
 
 

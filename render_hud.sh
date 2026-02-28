@@ -1,20 +1,23 @@
 #!/bin/bash
 # Build HUD overlay and render MP4 with telemetry burn-in and audio.
-# Usage: ./render_hud.sh [--imperial | -i] [--no-audio | -n] [--dheading DEG] BASE_OR_DIR
+# Usage: ./render_hud.sh [--imperial | -i] [--no-audio | -n] [--dheading DEG] [-x] BASE_OR_DIR
 #   BASE_OR_DIR = base name (script appends .srt, .mp4, .m4a), or directory containing one .srt, .mp4, .m4a
 #   --no-audio = use audio from MP4 only (skip external .m4a; use when MP4 already has audio)
 #   --dheading DEG = add DEG degrees to HUD heading (corrected to 0-360)
+#   -x = hide lat/lon from HUD (privacy)
 set -e
 cd "$(dirname "$0")"
 
 IMPERIAL=()
 NO_AUDIO=false
 DHEADING=()
+HIDE_LOCATION=()
 ARG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --imperial|-i) IMPERIAL=("$1"); shift ;;
     --no-audio|-n) NO_AUDIO=true; shift ;;
+    -x|--hide-location) HIDE_LOCATION=("-x"); shift ;;
     --dheading|-dheading)
       shift
       [[ -z "${1:-}" ]] && { echo "Missing value for --dheading" >&2; exit 1; }
@@ -33,10 +36,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ -z "$ARG" ]]; then
-  echo "Usage: $0 [--imperial | -i] [--no-audio | -n] [--dheading DEG] BASE_OR_DIR" >&2
+  echo "Usage: $0 [--imperial | -i] [--no-audio | -n] [--dheading DEG] [-x] BASE_OR_DIR" >&2
   echo "  BASE_OR_DIR = base name or directory containing one .srt, .mp4, .m4a" >&2
   echo "  --no-audio, -n = use MP4 audio only (skip external .m4a)" >&2
-  echo "  --dheading DEG = add DEG degrees to HUD heading (use --dheading, not -dheading)" >&2
+  echo "  --dheading DEG = add DEG degrees to HUD heading" >&2
+  echo "  -x = hide lat/lon from HUD (privacy)" >&2
   exit 1
 fi
 if [[ -d "$ARG" ]]; then
@@ -75,7 +79,7 @@ ASS="${BASE}_HUD.ass"
 OUT="${BASE}_HUD.mp4"
 
 echo "Building HUD overlay from ${SRT}..."
-python3 build_hud_overlay.py "${IMPERIAL[@]}" "${DHEADING[@]}" "$BASE"
+python3 build_hud_overlay.py "${IMPERIAL[@]}" "${DHEADING[@]}" "${HIDE_LOCATION[@]}" "$BASE"
 
 # Get total frame count for progress
 duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$MP4" 2>/dev/null || echo 0)
